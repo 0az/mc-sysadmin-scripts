@@ -12,18 +12,27 @@ SPEC = {
     'velocity': 'velocity.Dockerfile',
 }
 
+DRY_RUN = os.getenv('DRY_RUN', '').lower() in ('1', 'yes', 'y', 'true', 't')
+TAG_SUFFIX = os.getenv('SUFFIX', '')
+IMAGE_VERSION = os.getenv('VERSION', 'latest')
 
 def _docker_build(file: 'PathLike', target: str, label: str, tag: str) -> str:
+    if TAG_SUFFIX:
+        tag = tag + TAG_SUFFIX
     return f'docker build -f {file} --target {target} --tag {REPO_PREFIX}{label}:{tag} .'
 
 
 def _docker_run(name: str, tag: str, command: list[str] = None) -> str:
+    if TAG_SUFFIX:
+        tag = tag + TAG_SUFFIX
     tag = f':{tag}' if tag else ''
     cmd = shlex.join(command) if command else ''
     return f'docker run -it --rm {REPO_PREFIX}{name}{tag} {cmd}'
 
 
 def _docker_push(name: str, tag: str) -> str:
+    if TAG_SUFFIX:
+        tag = tag + TAG_SUFFIX
     return f'docker push {REPO_PREFIX}{name}:{tag}'
 
 
@@ -34,7 +43,11 @@ def build_task(label: str, stage: str, deps: list = None):
     @task(name=name, pre=deps)
     def _inner(c):
         print(f'Docker: Building {label}, stage :{stage})')
-        c.run(_docker_build(file, stage, label, f'latest-{stage}'))
+        cmd = _docker_build(file, stage, label, f'{IMAGE_VERSION}-{stage}')
+        if DRY_RUN:
+            print(cmd)
+        else:
+            c.run(cmd, pty=True)
 
     return _inner
 
@@ -45,14 +58,18 @@ def run_task(label: str, tag: str, command: list[str]):
         name += '-tag'
     if command and command[0] == 'sh':
         name += '-shell'
-    tag = f'latest-{tag}'
+    tag = f'{IMAGE_VERSION}-{tag}'
 
     @task(name=name)
     def _inner(c):
+        cmd = _docker_run(label, tag, command)
+        if DRY_RUN:
+            print(cmd)
+            return
         if pid := os.fork():
             os.wait()
         else:
-            args = shlex.split(_docker_run(label, tag, command))
+            args = shlex.split(cmd)
             os.execvp(args[0], args)
 
     return _inner
@@ -95,7 +112,11 @@ def push(c):
     print('Docker: Pushing images')
     for label in ('paper', 'velocity'):
         for stage in ('build', 'artifact'):
-            c.run(_docker_push(label, f'latest-{stage}'), pty=True)
+            cmd = _docker_push(label, f'{IMAGE_VERSION}-{stage}')
+            if DRY_RUN:
+                print(cmd)
+            else:
+                c.run(cmd, pty=True)
     print('Docker: Done pushing!')
 
 
