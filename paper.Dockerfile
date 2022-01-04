@@ -1,10 +1,10 @@
-ARG BUILDER_TAG=buster-20210621-slim
 ARG MINECRAFT_VERSION=1.17.1
 ARG PAPER_BUILD=263
 ARG PAPER_NAME=paper-${MINECRAFT_VERSION}-${PAPER_BUILD}.jar
 ARG PAPER_SHA=dc74e70af7758d2292a053e189560d2824cc900918922efb904c996bab097e3c
-ARG ARTIFACT_IMAGE=adoptopenjdk/openjdk16:jre-16.0.1_9-debianslim
-ARG BUILD_IMAGE=adoptopenjdk/openjdk16:jdk-16.0.1_9-debianslim
+
+ARG ARTIFACT_IMAGE=eclipse-temurin:17-alpine
+ARG BUILD_IMAGE=eclipse-temurin:17-alpine
 
 FROM ${BUILD_IMAGE} as build
 
@@ -17,6 +17,7 @@ WORKDIR /app
 
 RUN \
 	echo "${PAPER_SHA} /app/paper.jar" > /tmp/checksum.txt \
+	&& apk add --no-cache curl \
 	&& echo \
 	https://papermc.io/api/v2/projects/paper/versions/${MINECRAFT_VERSION}/builds/${PAPER_BUILD}/downloads/${PAPER_NAME} >&2 \
 	&& curl \
@@ -37,7 +38,10 @@ FROM ${ARTIFACT_IMAGE} as artifact
 VOLUME /data
 WORKDIR /data
 
-RUN mkdir /app
+RUN \
+	mkdir /app \
+	&& apk add --no-cache bash \
+;
 COPY --from=build /app/paper.jar /app/paper.jar
 COPY --from=build /app/HealthcheckClient.class /app/HealthcheckClient.class
 COPY start-paper.sh /app/start-paper.sh
