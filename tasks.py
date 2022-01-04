@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 from invoke import Collection, Task, task
 
 import os
@@ -15,6 +16,57 @@ SPEC = {
 DRY_RUN = os.getenv('DRY_RUN', '').lower() in ('1', 'yes', 'y', 'true', 't')
 TAG_SUFFIX = os.getenv('SUFFIX', '')
 IMAGE_VERSION = os.getenv('VERSION', 'latest')
+
+
+def _parse_version(s: str) -> tuple[int, int, int]:
+    """
+    Parse a dot-separated version string.
+    """
+
+    l = [int(v) for v in s.split('.')]
+    if len(l) == 1:
+        return l[0], 0, 0
+    elif len(l) == 2:
+        return l[0], l[1], 0
+    return tuple(l)
+
+
+@task(name='get-paper-version')
+def get_paper_version(ctx):
+    with httpx.Client(base_url='https://papermc.io/api/v2') as client:
+        r = client.get('/projects/paper')
+        r.raise_for_status()
+        versions = r.json().get('versions')
+        if not versions:
+            raise RuntimeError(
+                'Invalid Paper API Response: Missing key `versions`'
+            )
+
+        version_tuples = sorted(
+            _parse_version(s) for s in versions if '-' not in s
+        )
+        latest = '.'.join(map(str, version_tuples[-1]))
+
+        r = client.get(f'/projects/paper/versions/{latest}')
+        r.raise_for_status()
+        builds = r.json().get('builds')
+        if not builds:
+            raise RuntimeError(
+                'Invalid Paper API Response: Missing key `builds`'
+            )
+        builds.sort()
+        build_ = builds[-1]
+
+        r = client.get(f'/projects/paper/versions/{latest}/builds/{build_}')
+        r.raise_for_status()
+        app = r.json().get('downloads', {}).get('application', {})
+        name, sha256 = app.get('name'), app.get('sha256')
+        if not name or not sha256:
+            raise RuntimeError(
+                'Invalid Paper API Response: Missing key `name` or `sha256`'
+            )
+        print(f'{build_}\t{name}\t{sha256}')
+
 
 def _docker_build(file: 'PathLike', target: str, label: str, tag: str) -> str:
     if TAG_SUFFIX:
@@ -132,3 +184,4 @@ ns = Collection()  # noqa: invalid-name
 ns.add_collection(docker_ns)
 ns.add_task(build)
 ns.add_task(push)
+ns.add_task(get_paper_version)
