@@ -71,7 +71,7 @@ def get_paper_version(ctx):
 def _docker_build(file: 'PathLike', target: str, label: str, tag: str) -> str:
     if TAG_SUFFIX:
         tag = tag + TAG_SUFFIX
-    return f'docker build -f {file} --target {target} --tag {REPO_PREFIX}{label}:{tag} .'
+    return f'docker buildx build --platform linux/amd64 -f {file} --target {target} --tag {REPO_PREFIX}{label}:{tag} .'
 
 
 def _docker_run(name: str, tag: str, command: list[str] = None) -> str:
